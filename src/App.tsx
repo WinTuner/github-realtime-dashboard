@@ -111,7 +111,6 @@ interface PinnedRepo {
 interface ContributionDay {
   date: string;
   contributionCount: number;
-  level: string;
 }
 interface ContributionWeek {
   contributionDays: ContributionDay[];
@@ -636,10 +635,10 @@ function App() {
                 <div className="contribution-week" key={wi}>
                   {week.contributionDays.map((day) => {
                     let color = 'rgba(255, 255, 255, 0.06)';
-                    if (day.level === 'FIRST_QUARTER') color = 'var(--contrib-1)';
-                    else if (day.level === 'SECOND_QUARTER') color = 'var(--contrib-2)';
-                    else if (day.level === 'THIRD_QUARTER') color = 'var(--contrib-3)';
-                    else if (day.level === 'FOURTH_QUARTER') color = 'var(--contrib-4)';
+                    if (day.contributionCount > 0 && day.contributionCount <= 3) color = 'var(--contrib-1)';
+                    else if (day.contributionCount <= 6) color = 'var(--contrib-2)';
+                    else if (day.contributionCount <= 9) color = 'var(--contrib-3)';
+                    else if (day.contributionCount > 9) color = 'var(--contrib-4)';
                     return (
                       <div
                         key={day.date}

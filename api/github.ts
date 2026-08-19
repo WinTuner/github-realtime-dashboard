@@ -69,7 +69,6 @@ const CONTRIBUTIONS_QUERY = `
             contributionDays {
               date
               contributionCount
-              level
             }
           }
         }
