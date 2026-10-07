@@ -1,0 +1,150 @@
+import { memo } from 'react';
+import { Terminal as TerminalIcon } from 'lucide-react';
+import type { GitHubEvent } from '@/types/github';
+import { DEFAULT_USERNAME } from '@/lib/constants';
+import { formatEventTime, stripRepoPrefix } from '@/lib/format';
+
+interface Props {
+  events: GitHubEvent[];
+  loading: boolean;
+  username?: string;
+}
+
+function EventLine({ event, username }: { event: GitHubEvent; username: string }) {
+  const repoName = stripRepoPrefix(event.repo.name, username);
+  const timeStr = formatEventTime(event.created_at);
+
+  switch (event.type) {
+    case 'PushEvent': {
+      const commitCount = event.payload.commits?.length || 0;
+      const ref = event.payload.ref?.replace('refs/heads/', '') || 'main';
+      const lastCommitMsg = event.payload.commits?.[0]?.message || '';
+      return (
+        <div className="terminal-line">
+          <span className="term-time">{timeStr}</span>
+          <span className="term-tag push">PUSH</span>
+          <span>
+            Committed {commitCount} commit(s) to <span className="term-repo">{ref}</span> in{' '}
+            <strong>{repoName}</strong>
+          </span>
+          {lastCommitMsg && <span className="term-detail">&gt; {lastCommitMsg}</span>}
+        </div>
+      );
+    }
+    case 'CreateEvent': {
+      return (
+        <div className="terminal-line">
+          <span className="term-time">{timeStr}</span>
+          <span className="term-tag create">CREATE</span>
+          <span>
+            Created {event.payload.ref_type} <span className="term-repo">{event.payload.ref || ''}</span> on{' '}
+            <strong>{repoName}</strong>
+          </span>
+        </div>
+      );
+    }
+    case 'WatchEvent': {
+      return (
+        <div className="terminal-line">
+          <span className="term-time">{timeStr}</span>
+          <span className="term-tag star">STAR</span>
+          <span>
+            Starred repository <strong>{repoName}</strong>
+          </span>
+        </div>
+      );
+    }
+    case 'ForkEvent': {
+      return (
+        <div className="terminal-line">
+          <span className="term-time">{timeStr}</span>
+          <span className="term-tag fork">FORK</span>
+          <span>
+            Forked <strong>{repoName}</strong> into <strong>{event.payload.forkee?.full_name || 'fork'}</strong>
+          </span>
+        </div>
+      );
+    }
+    case 'PullRequestEvent': {
+      return (
+        <div className="terminal-line">
+          <span className="term-time">{timeStr}</span>
+          <span className="term-tag pr">PR</span>
+          <span>
+            {event.payload.action} PR #{event.payload.pull_request?.number} in <strong>{repoName}</strong>
+          </span>
+          <span className="term-detail">&gt; {event.payload.pull_request?.title}</span>
+        </div>
+      );
+    }
+    case 'IssuesEvent': {
+      return (
+        <div className="terminal-line">
+          <span className="term-time">{timeStr}</span>
+          <span className="term-tag issue">ISSUE</span>
+          <span>
+            {event.payload.action} Issue #{event.payload.issue?.number} in <strong>{repoName}</strong>
+          </span>
+          <span className="term-detail">&gt; {event.payload.issue?.title}</span>
+        </div>
+      );
+    }
+    default: {
+      const actionType = event.type.replace('Event', '');
+      return (
+        <div className="terminal-line">
+          <span className="term-time">{timeStr}</span>
+          <span className="term-tag other">{actionType.toUpperCase()}</span>
+          <span>
+            Triggered {actionType} in <strong>{repoName}</strong>
+          </span>
+        </div>
+      );
+    }
+  }
+}
+
+const MemoEventLine = memo(EventLine);
+
+export function EventTerminal({ events, loading, username = DEFAULT_USERNAME }: Props) {
+  return (
+    <div className="glass-panel">
+      <div className="panel-title">
+        Live Event Feed (WinTuner OS)
+        <TerminalIcon size={16} />
+      </div>
+      <div style={{ padding: '16px' }}>
+        <div className="terminal">
+          <div className="terminal-header">
+            <div className="terminal-dots">
+              <span className="dot red" />
+              <span className="dot yellow" />
+              <span className="dot green" />
+            </div>
+            <span className="terminal-title">live_logger.sh</span>
+          </div>
+          <div className="terminal-body" aria-live="polite">
+            <div className="terminal-line" style={{ color: 'var(--accent-cyan)' }}>
+              <span>$ ./listen_github_events.sh --user {username}</span>
+            </div>
+            <div className="terminal-line" style={{ color: 'var(--text-muted)' }}>
+              <span>[SYS] System Initialized. Listening to REST events.</span>
+            </div>
+
+            {loading && events.length === 0 ? (
+              <div className="terminal-line" style={{ color: 'var(--text-muted)' }}>
+                <span>Fetching logs...</span>
+              </div>
+            ) : events.length === 0 ? (
+              <div className="terminal-line" style={{ color: 'var(--text-muted)' }}>
+                <span>No recent events found.</span>
+              </div>
+            ) : (
+              events.map((e) => <MemoEventLine key={e.id} event={e} username={username} />)
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
