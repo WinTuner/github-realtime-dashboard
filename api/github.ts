@@ -1,167 +1,90 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import {
+  CONTRIBUTIONS_QUERY,
+  PINNED_QUERY,
+  get,
+  getToken,
+  getUsername,
+  graphql,
+  mapContributions,
+  mapPinned,
+  type ContributionsDto,
+  type PinnedRepoDto,
+  type RestMeta,
+} from './_lib/github.js';
 
-const USERNAME = process.env.GITHUB_USERNAME || 'WinTuner';
-const TOKEN = process.env.GITHUB_TOKEN;
-const API = 'https://api.github.com';
-const GRAPHQL = 'https://api.github.com/graphql';
-
-function json(res: ServerResponse, status: number, body: unknown) {
+function json(res: ServerResponse, status: number, body: unknown, cacheSeconds = 60) {
   res.statusCode = status;
   res.setHeader('Content-Type', 'application/json');
-  res.setHeader('Cache-Control', 'public, s-maxage=120, stale-while-revalidate=600');
+  res.setHeader(
+    'Cache-Control',
+    `public, s-maxage=${cacheSeconds}, stale-while-revalidate=300`,
+  );
   res.end(JSON.stringify(body));
 }
 
-function ghHeaders(useAuth = true): Record<string, string> {
-  const headers: Record<string, string> = {
-    Accept: 'application/vnd.github+json',
-    'User-Agent': 'github-realtime-dashboard',
-  };
-  if (useAuth && TOKEN) headers.Authorization = `Bearer ${TOKEN.trim()}`;
-  return headers;
-}
-
-async function get(path: string) {
-  // Try authenticated first (to get higher rate-limit), fallback to unauthenticated on 401
-  // Public endpoints like /users/:login do NOT require auth — a bad TOKEN should not break them.
-  let res = await fetch(`${API}${path}`, { headers: ghHeaders(true) });
-  if (res.status === 401 && TOKEN) {
-    console.warn(`GitHub API ${path} returned 401 with token — retrying unauthenticated`);
-    res = await fetch(`${API}${path}`, { headers: ghHeaders(false) });
-  }
-  if (!res.ok) {
-    // Include body excerpt for debugging (e.g. "Bad credentials")
-    const body = await res.text().catch(() => '');
-    throw new Error(`GitHub API ${path} failed: ${res.status} ${body.slice(0, 200)}`);
-  }
-  return res.json();
-}
-
-async function graphql(query: string, variables: Record<string, unknown>) {
-  const res = await fetch(GRAPHQL, {
-    method: 'POST',
-    headers: { ...ghHeaders(true), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, variables }),
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`GraphQL failed: ${res.status} ${body.slice(0, 200)}`);
-  }
-  const data = await res.json();
-  if (data.errors) {
-    throw new Error(`GraphQL errors: ${JSON.stringify(data.errors).slice(0, 500)}`);
-  }
-  return data;
-}
-
-const PINNED_QUERY = `
-  query($login: String!) {
-    user(login: $login) {
-      pinnedItems(first: 6, types: REPOSITORY) {
-        nodes {
-          ... on Repository {
-            id
-            name
-            description
-            url
-            stargazerCount
-            forkCount
-            primaryLanguage { name color }
-          }
-        }
-      }
-    }
-  }
-`;
-
-const CONTRIBUTIONS_QUERY = `
-  query($login: String!) {
-    user(login: $login) {
-      contributionsCollection {
-        contributionCalendar {
-          totalContributions
-          weeks {
-            contributionDays {
-              date
-              contributionCount
-            }
-          }
-        }
-      }
-    }
-  }
-`;
-
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
+  if (req.method !== undefined && req.method !== 'GET') {
+    json(res, 405, { error: 'Method not allowed' }, 0);
+    return;
+  }
+
+  const username = getUsername();
+  const token = getToken();
+  const warnings: string[] = [];
+
   try {
-    // Use allSettled so one failed endpoint doesn't take down the whole dashboard
-    const [profileRes, reposRes, eventsRes] = await Promise.allSettled([
-      get(`/users/${USERNAME}`),
-      get(`/users/${USERNAME}/repos?per_page=100&sort=updated`),
-      get(`/users/${USERNAME}/events?per_page=30`),
+    const [profileRes, reposRes, eventsRes] = await Promise.all([
+      get(`/users/${username}`),
+      get(`/users/${username}/repos?per_page=100&sort=updated`),
+      get(`/users/${username}/events?per_page=30`),
     ]);
 
-    if (profileRes.status === 'rejected' && reposRes.status === 'rejected' && eventsRes.status === 'rejected') {
-      // All three failed -> real outage, throw first error
-      throw profileRes.reason ?? reposRes.reason ?? eventsRes.reason;
-    }
+    const rateLimit: RestMeta | null =
+      profileRes.rateLimit ?? reposRes.rateLimit ?? eventsRes.rateLimit ?? null;
 
-    const profile = profileRes.status === 'fulfilled' ? profileRes.value : null;
-    const repos = reposRes.status === 'fulfilled' ? reposRes.value : [];
-    const events = eventsRes.status === 'fulfilled' ? eventsRes.value : [];
+    let pinned: PinnedRepoDto[] = [];
+    let contributions: ContributionsDto | null = null;
 
-    const warnings: string[] = [];
-    if (profileRes.status === 'rejected') warnings.push(`profile: ${String(profileRes.reason)}`);
-    if (reposRes.status === 'rejected') warnings.push(`repos: ${String(reposRes.reason)}`);
-    if (eventsRes.status === 'rejected') warnings.push(`events: ${String(eventsRes.reason)}`);
+    if (token) {
+      const [pinnedSettled, contribSettled] = await Promise.allSettled([
+        graphql(PINNED_QUERY, { login: username }),
+        graphql(CONTRIBUTIONS_QUERY, { login: username }),
+      ]);
 
-    let pinned: unknown = [];
-    let contributions: unknown = null;
+      if (pinnedSettled.status === 'fulfilled') {
+        pinned = mapPinned(pinnedSettled.value);
+      } else {
+        warnings.push(
+          pinnedSettled.reason instanceof Error
+            ? `pinned: ${pinnedSettled.reason.message}`
+            : 'pinned: unknown error',
+        );
+      }
 
-    if (TOKEN) {
-      try {
-        const [pinnedRes, contribRes] = await Promise.all([
-          graphql(PINNED_QUERY, { login: USERNAME }),
-          graphql(CONTRIBUTIONS_QUERY, { login: USERNAME }),
-        ]);
-        pinned =
-          pinnedRes?.data?.user?.pinnedItems?.nodes?.map(
-            (n: { id: string; name: string; description: string | null; url: string; stargazerCount: number; forkCount: number; primaryLanguage: { name: string; color: string | null } | null }) => ({
-              id: n.id,
-              name: n.name,
-              description: n.description,
-              url: n.url,
-              stargazers_count: n.stargazerCount,
-              forks_count: n.forkCount,
-              language: n.primaryLanguage?.name || null,
-              language_color: n.primaryLanguage?.color || null,
-            }),
-          ) ?? [];
-        contributions =
-          contribRes?.data?.user?.contributionsCollection?.contributionCalendar ?? null;
-      } catch (e) {
-        // GraphQL failure (e.g. bad token) should not break the whole dashboard
-        warnings.push(`graphql: ${e instanceof Error ? e.message : String(e)}`);
-        console.warn('GraphQL failed, returning empty pinned/contributions:', e);
+      if (contribSettled.status === 'fulfilled') {
+        contributions = mapContributions(contribSettled.value);
+      } else {
+        warnings.push(
+          contribSettled.reason instanceof Error
+            ? `contributions: ${contribSettled.reason.message}`
+            : 'contributions: unknown error',
+        );
       }
     }
 
     json(res, 200, {
-      profile,
-      repos,
-      events,
+      profile: profileRes.data,
+      repos: reposRes.data,
+      events: eventsRes.data,
       pinned,
       contributions,
-      authenticated: Boolean(TOKEN),
-      warnings: warnings.length ? warnings : undefined,
+      authenticated: Boolean(token),
+      rateLimit,
+      ...(warnings.length ? { warnings } : {}),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    // Hint for 401 specifically
-    const hint =
-      message.includes('401')
-        ? ' — Check Vercel env GITHUB_TOKEN: it is invalid/expired/revoked. Remove it or set a valid fine-grained PAT (no scopes needed for public data).'
-        : '';
-    json(res, 502, { error: message + hint });
+    json(res, 502, { error: message }, 0);
   }
 }
