@@ -34,14 +34,33 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   const warnings: string[] = [];
 
   try {
-    const [profileRes, reposRes, eventsRes] = await Promise.all([
+    const [profileRes, eventsRes, firstRepos] = await Promise.all([
       get(`/users/${username}`),
-      get(`/users/${username}/repos?per_page=100&sort=updated`),
       get(`/users/${username}/events?per_page=30`),
+      get<unknown[]>(`/users/${username}/repos?per_page=100&page=1&sort=updated`),
     ]);
 
+    // Paginate repos (up to 3 pages / 300 repos) so large profiles aren't truncated at 100.
+    const allRepos = [...firstRepos.data];
+    if (firstRepos.data.length === 100) {
+      for (let page = 2; page <= 3; page++) {
+        try {
+          const next = await get<unknown[]>(
+            `/users/${username}/repos?per_page=100&page=${page}&sort=updated`,
+          );
+          allRepos.push(...next.data);
+          if (next.data.length < 100) break;
+        } catch (err) {
+          warnings.push(
+            err instanceof Error ? `repos page ${page}: ${err.message}` : `repos page ${page} failed`,
+          );
+          break;
+        }
+      }
+    }
+
     const rateLimit: RestMeta | null =
-      profileRes.rateLimit ?? reposRes.rateLimit ?? eventsRes.rateLimit ?? null;
+      profileRes.rateLimit ?? firstRepos.rateLimit ?? eventsRes.rateLimit ?? null;
 
     let pinned: PinnedRepoDto[] = [];
     let contributions: ContributionsDto | null = null;
@@ -75,7 +94,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
     json(res, 200, {
       profile: profileRes.data,
-      repos: reposRes.data,
+      repos: allRepos,
       events: eventsRes.data,
       pinned,
       contributions,

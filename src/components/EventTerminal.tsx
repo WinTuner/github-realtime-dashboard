@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { Terminal as TerminalIcon } from 'lucide-react';
 import type { GitHubEvent } from '@/types/github';
 import { DEFAULT_USERNAME } from '@/lib/constants';
@@ -107,11 +107,35 @@ function EventLine({ event, username }: { event: GitHubEvent; username: string }
 const MemoEventLine = memo(EventLine);
 
 export function EventTerminal({ events, loading, username = DEFAULT_USERNAME }: Props) {
+  const [filter, setFilter] = useState('All');
+
+  const visibleEvents = useMemo(() => {
+    if (filter === 'All') return events;
+    return events.filter((e) => e.type === filter);
+  }, [events, filter]);
+
   return (
     <div className="glass-panel">
       <div className="panel-title">
         Live Event Feed (WinTuner OS)
-        <TerminalIcon size={16} />
+        <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <select
+            className="filter-select"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            aria-label="Filter events by type"
+            style={{ fontSize: '11px', padding: '4px 8px' }}
+          >
+            <option value="All">All events</option>
+            <option value="PushEvent">Pushes</option>
+            <option value="PullRequestEvent">Pull requests</option>
+            <option value="IssuesEvent">Issues</option>
+            <option value="WatchEvent">Stars</option>
+            <option value="ForkEvent">Forks</option>
+            <option value="CreateEvent">Creates</option>
+          </select>
+          <TerminalIcon size={16} />
+        </span>
       </div>
       <div style={{ padding: '16px' }}>
         <div className="terminal">
@@ -135,12 +159,12 @@ export function EventTerminal({ events, loading, username = DEFAULT_USERNAME }: 
               <div className="terminal-line" style={{ color: 'var(--text-muted)' }}>
                 <span>Fetching logs...</span>
               </div>
-            ) : events.length === 0 ? (
+            ) : visibleEvents.length === 0 ? (
               <div className="terminal-line" style={{ color: 'var(--text-muted)' }}>
-                <span>No recent events found.</span>
+                <span>No recent events found{filter !== 'All' ? ' for this filter.' : '.'}</span>
               </div>
             ) : (
-              events.map((e) => <MemoEventLine key={e.id} event={e} username={username} />)
+              visibleEvents.map((e) => <MemoEventLine key={e.id} event={e} username={username} />)
             )}
           </div>
         </div>

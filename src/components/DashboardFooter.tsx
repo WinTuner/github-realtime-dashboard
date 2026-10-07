@@ -1,10 +1,16 @@
 import { GithubIcon } from '@/components/GithubIcon';
+import type { RateLimit } from '@/types/github';
 
 interface Props {
   authenticated: boolean;
+  rateLimit?: RateLimit | null;
 }
 
-export function DashboardFooter({ authenticated }: Props) {
+export function DashboardFooter({ authenticated, rateLimit }: Props) {
+  const rateText =
+    rateLimit?.remaining != null && rateLimit?.limit != null
+      ? ` · API ${rateLimit.remaining}/${rateLimit.limit} remaining`
+      : '';
   return (
     <footer className="dashboard-footer">
       <div className="footer-brand">
@@ -13,7 +19,8 @@ export function DashboardFooter({ authenticated }: Props) {
       </div>
       <div>
         <span>
-          Updated dynamically every 60s via server-side GitHub API{authenticated ? ' (authenticated)' : ''}.
+          Updated dynamically every 60s via server-side GitHub API{authenticated ? ' (authenticated)' : ''}
+          {rateText}.
         </span>
       </div>
     </footer>

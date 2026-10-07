@@ -22,6 +22,7 @@ function App() {
     pinned,
     contributions,
     authenticated,
+    rateLimit,
     warnings,
     loading,
     refreshing,
@@ -66,7 +67,7 @@ function App() {
         </section>
       </div>
 
-      <DashboardFooter authenticated={authenticated} />
+      <DashboardFooter authenticated={authenticated} rateLimit={rateLimit} />
     </div>
   );
 }
