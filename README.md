@@ -46,4 +46,20 @@ The `api/` folder auto-deploys as serverless functions on Vercel.
 | `npm run dev` | Vite dev server |
 | `npm run build` | Type-check + production build |
 | `npm run lint` | Oxlint |
+| `npm run test` | Vitest (23 unit tests) |
+| `npm run test:watch` | Vitest watch mode |
 | `npm run preview` | Preview production build |
+
+## Project structure
+
+```
+api/
+  github.ts          # Aggregator: REST (paginated repos) + GraphQL (partial degradation)
+  healthz.ts         # Liveness probe
+  _lib/github.ts     # Timeouts, rate-limit parsing, zod-validated mappers
+src/
+  types/github.ts    # Dashboard DTOs
+  lib/               # format, stats (O(n) bucketing), constants
+  hooks/             # useDashboard (React Query, 60s poll), useRepoFilter, useDebouncedValue
+  components/        # 12 code-split panels + ErrorBoundary
+```
