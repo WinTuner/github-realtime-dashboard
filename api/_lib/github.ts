@@ -12,13 +12,13 @@ export function getToken(): string | undefined {
   return process.env.GITHUB_TOKEN;
 }
 
-export function ghHeaders(): Record<string, string> {
+export function ghHeaders(useAuth = true): Record<string, string> {
   const headers: Record<string, string> = {
     Accept: 'application/vnd.github+json',
     'User-Agent': 'github-realtime-dashboard',
   };
-  const token = getToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
+  const token = getToken()?.trim();
+  if (useAuth && token) headers.Authorization = `Bearer ${token}`;
   return headers;
 }
 
@@ -51,12 +51,25 @@ export async function fetchWithTimeout(
   }
 }
 
+async function readBodyExcerpt(res: Response, max = 200): Promise<string> {
+  try {
+    const text = await res.text();
+    return text.slice(0, max);
+  } catch {
+    return '';
+  }
+}
+
 export async function get<T = unknown>(
   path: string,
 ): Promise<{ data: T; rateLimit: RestMeta | null }> {
   let res: Response;
   try {
-    res = await fetchWithTimeout(`${API}${path}`, { headers: ghHeaders() });
+    // Authenticated first (higher rate-limit); a bad token must not break public endpoints.
+    res = await fetchWithTimeout(`${API}${path}`, { headers: ghHeaders(true) });
+    if (res.status === 401 && getToken()) {
+      res = await fetchWithTimeout(`${API}${path}`, { headers: ghHeaders(false) });
+    }
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {
       throw new Error(`GitHub API ${path} timed out after ${REQUEST_TIMEOUT_MS}ms`);
@@ -65,7 +78,8 @@ export async function get<T = unknown>(
   }
   const rateLimit = parseRateLimit(res.headers);
   if (!res.ok) {
-    throw new Error(`GitHub API ${path} failed: ${res.status}`);
+    const excerpt = await readBodyExcerpt(res);
+    throw new Error(`GitHub API ${path} failed: ${res.status}${excerpt ? ` ${excerpt}` : ''}`);
   }
   const data = (await res.json()) as T;
   return { data, rateLimit };
@@ -91,7 +105,10 @@ export async function graphql<T = unknown>(
     }
     throw err;
   }
-  if (!res.ok) throw new Error(`GraphQL failed: ${res.status}`);
+  if (!res.ok) {
+    const excerpt = await readBodyExcerpt(res);
+    throw new Error(`GraphQL failed: ${res.status}${excerpt ? ` ${excerpt}` : ''}`);
+  }
   const body = (await res.json()) as { data?: T; errors?: Array<{ message: string }> };
   if (body.errors?.length) {
     throw new Error(`GraphQL errors: ${body.errors.map((e) => e.message).join('; ')}`);
