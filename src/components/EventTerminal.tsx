@@ -16,16 +16,27 @@ function EventLine({ event, username }: { event: GitHubEvent; username: string }
 
   switch (event.type) {
     case 'PushEvent': {
-      const commitCount = event.payload.commits?.length || 0;
+      const commits =
+        event.payload.commits && event.payload.commits.length > 0 ? event.payload.commits : undefined;
+      const count = commits?.length ?? event.payload.size ?? event.payload.distinct_size ?? 0;
       const ref = event.payload.ref?.replace('refs/heads/', '') || 'main';
-      const lastCommitMsg = event.payload.commits?.[0]?.message || '';
+      const lastCommitMsg = commits?.[0]?.message || '';
       return (
         <div className="terminal-line">
           <span className="term-time">{timeStr}</span>
           <span className="term-tag push">PUSH</span>
           <span>
-            Committed {commitCount} commit(s) to <span className="term-repo">{ref}</span> in{' '}
-            <strong>{repoName}</strong>
+            {commits ? (
+              <>
+                Committed {count} commit(s) to <span className="term-repo">{ref}</span> in{' '}
+                <strong>{repoName}</strong>
+              </>
+            ) : (
+              <>
+                Pushed {count > 0 ? `${count} commit(s)` : 'commits'} to{' '}
+                <span className="term-repo">{ref}</span> in <strong>{repoName}</strong>
+              </>
+            )}
           </span>
           {lastCommitMsg && <span className="term-detail">&gt; {lastCommitMsg}</span>}
         </div>

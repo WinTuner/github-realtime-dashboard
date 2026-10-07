@@ -21,6 +21,8 @@ export interface GitHubEventPayload {
   action?: string;
   ref?: string;
   ref_type?: string;
+  size?: number;
+  distinct_size?: number;
   commits?: GitHubEventCommit[];
   pull_request?: {
     number: number;

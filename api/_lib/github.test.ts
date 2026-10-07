@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mapContributions, mapPinned } from './github.js';
+import { friendlyWarning, isAuthError, mapContributions, mapPinned } from './github.js';
 
 describe('mapPinned', () => {
   it('maps GraphQL nodes to DTOs', () => {
@@ -53,5 +53,24 @@ describe('mapContributions', () => {
 
   it('returns null for malformed payloads', () => {
     expect(mapContributions({})).toBeNull();
+  });
+});
+
+describe('isAuthError', () => {
+  it('detects 401s and bad credentials', () => {
+    expect(isAuthError(new Error('GraphQL failed: 401 { "message": "Bad credentials" }'))).toBe(true);
+    expect(isAuthError('request failed: 403 rate limited')).toBe(false);
+  });
+});
+
+describe('friendlyWarning', () => {
+  it('sanitizes auth failures', () => {
+    expect(friendlyWarning('pinned', new Error('GraphQL failed: 401'))).toBe(
+      'pinned: GitHub token rejected (401) — check the GITHUB_TOKEN env var',
+    );
+  });
+
+  it('passes through other errors', () => {
+    expect(friendlyWarning('repos', new Error('boom'))).toBe('repos: boom');
   });
 });

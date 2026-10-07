@@ -112,6 +112,14 @@ describe('computeHabits', () => {
       'Night Owl (10pm-5am)',
     ]).toContain(habits.hourHabit);
   });
+
+  it('falls back to payload size when commits are truncated', () => {
+    const events = [
+      event({ id: '1', created_at: '2026-06-02T10:00:00Z', payload: { commits: [], size: 7 } }),
+      event({ id: '2', created_at: '2026-06-02T10:00:00Z', payload: { size: 3 } }),
+    ];
+    expect(computeHabits(events).commitCount).toBe(10);
+  });
 });
 
 describe('bucketActivity24h', () => {

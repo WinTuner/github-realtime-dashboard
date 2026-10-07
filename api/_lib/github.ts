@@ -235,3 +235,17 @@ export function mapContributions(data: unknown): ContributionsDto | null {
   if (!parsed.success) return null;
   return parsed.data.user?.contributionsCollection?.contributionCalendar ?? null;
 }
+
+export function isAuthError(reason: unknown): boolean {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  return msg.includes('401') || /bad credentials/i.test(msg);
+}
+
+/** User-facing warning: sanitize auth failures instead of leaking raw API JSON. */
+export function friendlyWarning(source: string, reason: unknown): string {
+  if (isAuthError(reason)) {
+    return `${source}: GitHub token rejected (401) — check the GITHUB_TOKEN env var`;
+  }
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  return `${source}: ${msg}`;
+}

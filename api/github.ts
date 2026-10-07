@@ -2,10 +2,12 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   CONTRIBUTIONS_QUERY,
   PINNED_QUERY,
+  friendlyWarning,
   get,
   getToken,
   getUsername,
   graphql,
+  isAuthError,
   mapContributions,
   mapPinned,
   type ContributionsDto,
@@ -93,6 +95,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
     let pinned: PinnedRepoDto[] = [];
     let contributions: ContributionsDto | null = null;
+    let tokenRejected = false;
 
     if (token) {
       const [pinnedSettled, contribSettled] = await Promise.allSettled([
@@ -103,21 +106,15 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       if (pinnedSettled.status === 'fulfilled') {
         pinned = mapPinned(pinnedSettled.value);
       } else {
-        warnings.push(
-          pinnedSettled.reason instanceof Error
-            ? `pinned: ${pinnedSettled.reason.message}`
-            : 'pinned: unknown error',
-        );
+        warnings.push(friendlyWarning('pinned', pinnedSettled.reason));
+        tokenRejected ||= isAuthError(pinnedSettled.reason);
       }
 
       if (contribSettled.status === 'fulfilled') {
         contributions = mapContributions(contribSettled.value);
       } else {
-        warnings.push(
-          contribSettled.reason instanceof Error
-            ? `contributions: ${contribSettled.reason.message}`
-            : 'contributions: unknown error',
-        );
+        warnings.push(friendlyWarning('contributions', contribSettled.reason));
+        tokenRejected ||= isAuthError(contribSettled.reason);
       }
     }
 
@@ -127,7 +124,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       events,
       pinned,
       contributions,
-      authenticated: Boolean(token),
+      authenticated: Boolean(token) && !tokenRejected,
       rateLimit,
       ...(warnings.length ? { warnings } : {}),
     });

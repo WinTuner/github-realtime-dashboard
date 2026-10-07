@@ -138,8 +138,9 @@ export function computeHabits(events: GitHubEvent[]): Habits {
       maxDay = day;
     }
 
-    if (e.type === 'PushEvent' && e.payload.commits) {
-      commitCount += e.payload.commits.length;
+    if (e.type === 'PushEvent') {
+      const c = e.payload.commits;
+      commitCount += c && c.length > 0 ? c.length : (e.payload.size ?? e.payload.distinct_size ?? 0);
     }
   }
 
