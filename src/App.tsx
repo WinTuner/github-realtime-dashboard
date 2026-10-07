@@ -13,7 +13,6 @@ import { ActivityGrid } from '@/components/ActivityGrid';
 import { HabitsPanel } from '@/components/HabitsPanel';
 import { StatusBanners } from '@/components/StatusBanners';
 import { DashboardFooter } from '@/components/DashboardFooter';
-import './App.css';
 
 function App() {
   const {
