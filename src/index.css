@@ -1099,3 +1099,20 @@ body::after {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* Accessibility: visible keyboard focus */
+:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 2px;
+}
+
+/* Accessibility + perf: respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
