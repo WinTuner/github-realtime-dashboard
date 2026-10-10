@@ -18,3 +18,19 @@ jobs:
       - run: npm run lint
       - run: npm run test
       - run: npm run build
+
+  # Production deploys ONLY via Vercel Deploy Hook, and only after verify
+  # passes. Vercel auto-deploy must be disabled (Settings -> Git ->
+  # Ignored Build Step = `exit 0`), otherwise pushes deploy without CI.
+  deploy:
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Vercel deploy hook
+        run: |
+          if [ -z "${{ secrets.VERCEL_DEPLOY_HOOK }}" ]; then
+            echo "::error::VERCEL_DEPLOY_HOOK secret missing — deployment blocked. Add it in GitHub -> Settings -> Secrets -> Actions."
+            exit 1
+          fi
+          curl -fsS -X POST "${{ secrets.VERCEL_DEPLOY_HOOK }}"
