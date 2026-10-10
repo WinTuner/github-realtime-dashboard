@@ -9,7 +9,11 @@ export function getUsername(): string {
 }
 
 export function getToken(): string | undefined {
-  return process.env.GITHUB_TOKEN;
+  const raw = process.env.GITHUB_TOKEN;
+  if (!raw) return undefined;
+  // Strip whitespace + accidental surrounding quotes from copy-paste.
+  const cleaned = raw.trim().replace(/^["']+|["']+$/g, '').trim();
+  return cleaned || undefined;
 }
 
 export function ghHeaders(useAuth = true): Record<string, string> {
@@ -238,14 +242,55 @@ export function mapContributions(data: unknown): ContributionsDto | null {
 
 export function isAuthError(reason: unknown): boolean {
   const msg = reason instanceof Error ? reason.message : String(reason);
-  return msg.includes('401') || /bad credentials/i.test(msg);
+  return (
+    msg.includes('401') ||
+    /bad credentials/i.test(msg) ||
+    /requires authentication/i.test(msg) ||
+    /unauthenticated/i.test(msg)
+  );
 }
 
 /** User-facing warning: sanitize auth failures instead of leaking raw API JSON. */
 export function friendlyWarning(source: string, reason: unknown): string {
   if (isAuthError(reason)) {
-    return `${source}: GitHub token rejected (401) — check the GITHUB_TOKEN env var`;
+    return `${source}: GitHub token rejected (401) — check the GITHUB_TOKEN env var (invalid/expired/revoked). Fix: Vercel → Settings → Environment Variables → set a valid fine-grained PAT (no scopes needed for public data), then redeploy; or remove it to run unauthenticated (pinned/contributions degraded)`;
   }
   const msg = reason instanceof Error ? reason.message : String(reason);
   return `${source}: ${msg}`;
+}
+
+const RestRepoSchema = z.object({
+  id: z.union([z.string(), z.number()]),
+  name: z.string(),
+  description: z.string().nullable().optional(),
+  html_url: z.string().optional(),
+  url: z.string().optional(),
+  stargazers_count: z.number().optional(),
+  stargazerCount: z.number().optional(),
+  forks_count: z.number().optional(),
+  forkCount: z.number().optional(),
+  language: z.string().nullable().optional(),
+});
+
+/** REST fallback when GraphQL auth fails: top-starred repos mapped to PinnedRepoDto shape. */
+export function buildPinnedFallback(repos: unknown, limit = 6): PinnedRepoDto[] {
+  if (!Array.isArray(repos)) return [];
+  const mapped: PinnedRepoDto[] = [];
+  for (const r of repos) {
+    const parsed = RestRepoSchema.safeParse(r);
+    if (!parsed.success) continue;
+    const v = parsed.data;
+    mapped.push({
+      id: String(v.id),
+      name: v.name,
+      description: v.description ?? null,
+      url: v.html_url ?? v.url ?? '',
+      stargazers_count: v.stargazers_count ?? v.stargazerCount ?? 0,
+      forks_count: v.forks_count ?? v.forkCount ?? 0,
+      language: v.language ?? null,
+      language_color: null,
+    });
+  }
+  mapped.sort((a, b) => b.stargazers_count - a.stargazers_count);
+  return mapped.slice(0, limit);
 }

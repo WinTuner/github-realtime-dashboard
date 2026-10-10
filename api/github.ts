@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   CONTRIBUTIONS_QUERY,
   PINNED_QUERY,
+  buildPinnedFallback,
   friendlyWarning,
   get,
   getToken,
@@ -105,6 +106,13 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
       if (pinnedSettled.status === 'fulfilled') {
         pinned = mapPinned(pinnedSettled.value);
+      } else if (isAuthError(pinnedSettled.reason) && allRepos.length > 0) {
+        // Bad token must not blank the panel: degrade to top-starred REST repos.
+        pinned = buildPinnedFallback(allRepos);
+        tokenRejected = true;
+        warnings.push(
+          'pinned: GitHub token rejected (401) — showing top-starred repos instead; check the GITHUB_TOKEN env var',
+        );
       } else {
         warnings.push(friendlyWarning('pinned', pinnedSettled.reason));
         tokenRejected ||= isAuthError(pinnedSettled.reason);
